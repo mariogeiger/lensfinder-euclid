@@ -18,6 +18,9 @@ python v3 is needed with the following libraries:
 - `arch_views.py` two NN feed with the full image and only the central part connected at the end
 - `arch_invariant.py` invariant NN under the dihedral group
 
+## get started notebook
+The file `get_started.ipynb` is a jupyter notebook that contains example usage.
+
 ## make a prediction
 
     python3 predict.py arch_baseline.py trained_variables/space_based/baseline output.txt samples/space_based/lens

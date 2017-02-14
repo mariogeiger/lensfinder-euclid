@@ -1,7 +1,7 @@
 # pylint: disable=C,R,no-member
 
 # Usage
-# python3 neural_train.py arch?/arch.py path_to_npz_files output_path number_of_iteration
+# python3 train.py arch?/arch.py path_to_npz_files output_path number_of_iteration
 
 import tensorflow as tf
 import numpy as np

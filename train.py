@@ -1,7 +1,7 @@
 # pylint: disable=C,R,no-member
 
 # Usage
-# python3 train.py arch?/arch.py path_to_npz_files output_path number_of_iteration
+# python3 neural_train.py arch?/arch.py path_to_npz_files output_path number_of_iteration
 
 import tensorflow as tf
 import numpy as np
@@ -16,6 +16,8 @@ from shutil import copy2
 import os
 import sys
 import glob
+import scipy
+import scipy.ndimage as ndimage
 
 def make_fits(files, labels, predict, path='.', suffix='', maxi=500, band=0):
     # pylint: disable=no-member
@@ -37,6 +39,36 @@ def make_fits(files, labels, predict, path='.', suffix='', maxi=500, band=0):
     fits.PrimaryHDU([np.load(files[i])['image'][:,:,band] for i in tp[:maxi]]).writeto('{}/tp{}.fits'.format(path, suffix), overwrite=True)
     fits.PrimaryHDU([np.load(files[i])['image'][:,:,band] for i in tn[:maxi]]).writeto('{}/tn{}.fits'.format(path, suffix), overwrite=True)
 
+def images_to_sprite(data):
+    """Creates the sprite image along with any necessary padding
+
+    Args:
+      data: NxHxW[x3] tensor containing the images.
+
+    Returns:
+      data: Properly shaped HxWx3 image with any necessary padding.
+    """
+    if len(data.shape) == 3:
+        data = np.tile(data[...,np.newaxis], (1,1,1,3))
+    data = data.astype(np.float32)
+    min_ = np.min(data.reshape((data.shape[0], -1)), axis=1)
+    data = (data.transpose(1,2,3,0) - min_).transpose(3,0,1,2)
+    max_ = np.max(data.reshape((data.shape[0], -1)), axis=1)
+    data = (data.transpose(1,2,3,0) / max_).transpose(3,0,1,2)
+    # Inverting the colors seems to look better for MNIST
+    data = 1 - data
+
+    n = int(np.ceil(np.sqrt(data.shape[0])))
+    padding = ((0, n ** 2 - data.shape[0]), (0, 0),
+            (0, 0)) + ((0, 0),) * (data.ndim - 3)
+    data = np.pad(data, padding, mode='constant',
+            constant_values=0)
+    # Tile the individual thumbnails into an image.
+    data = data.reshape((n, n) + data.shape[1:]).transpose((0, 2, 1, 3)
+            + tuple(range(4, data.ndim + 1)))
+    data = data.reshape((n * data.shape[1], n * data.shape[3]) + data.shape[4:])
+    data = (data * 255).astype(np.uint8)
+    return data
 
 def predict_all(session, CNN, cnn, files, f, step=50):
     q = queue.Queue(20)  # batches in the queue
@@ -98,6 +130,7 @@ def main(arch_path, images_path, output_path, n_iter):
         resume = False
         os.makedirs(output_path)
         os.makedirs(output_path + '/iter')
+        os.makedirs(output_path + '/tensorboard')
         f = open(output_path + '/log.txt', 'w')
         fs = open(output_path + '/stats_test.txt', 'w')
         fst = open(output_path + '/stats_train.txt', 'w')
@@ -142,8 +175,6 @@ def main(arch_path, images_path, output_path, n_iter):
     f.write("Done\n{} bands\n".format(bands))
     f.flush()
 
-    saver = tf.train.Saver(max_to_keep=20)
-
     f.write("Extract test labels...")
     f.flush()
     labels_test = []
@@ -160,6 +191,55 @@ def main(arch_path, images_path, output_path, n_iter):
     labels_train = np.array(labels_train, np.float32)
     f.write(" Done\n")
     f.flush()
+
+    f.write("Merge summary...")
+    f.flush()
+    summary = tf.summary.merge_all()
+    f.write(" Done\n")
+    f.flush()
+
+    f.write("Create writer...")
+    f.flush()
+    writer = tf.summary.FileWriter(output_path + "/tensorboard")
+    writer.add_graph(session.graph)
+    f.write(" Done\nEmbedding...")
+    f.flush()
+
+    # Make sprite and labels.
+    images = ndimage.zoom(CNN.load(files_test[:1000]), (1, 64/101, 64/101, 1))
+    assert(images.shape == (1000, 64, 64, bands))
+    if bands == 1:
+        images = images[:, :, :, 0]
+    if bands == 4:
+        images = images[:, :, :, :3]
+    sprite = images_to_sprite(images)
+    scipy.misc.imsave(output_path + '/tensorboard/sprite.png', sprite)
+    all_labels = labels_test[:1000]
+    metadata_file = open(output_path + '/tensorboard/labels.tsv', 'w')
+    metadata_file.write('Name\tClass\n')
+    for ll in range(len(all_labels)):
+        metadata_file.write('{:06d}\t{}\n'.format(ll, all_labels[ll]))
+    metadata_file.close()
+
+    embedding_size = np.prod(cnn.embedding_input.get_shape().as_list()[1:])
+    embedding = tf.Variable(tf.zeros([1000, embedding_size]), name="test_embedding")
+    embedding_placeholder = tf.placeholder(tf.float32, embedding.get_shape())
+    embedding_assignment = embedding.assign(embedding_placeholder)
+
+    embedding_input_flatten = tf.reshape(cnn.embedding_input, [-1, embedding_size])
+
+    config = tf.contrib.tensorboard.plugins.projector.ProjectorConfig()
+    embedding_config = config.embeddings.add()
+    embedding_config.tensor_name = embedding.name
+    embedding_config.sprite.image_path = output_path + '/tensorboard/sprite.png'
+    embedding_config.metadata_path = output_path + '/tensorboard/labels.tsv'
+    # Specify the width and height of a single thumbnail.
+    embedding_config.sprite.single_image_dim.extend([64, 64])
+    tf.contrib.tensorboard.plugins.projector.visualize_embeddings(writer, config)
+    f.write(" Done\n")
+    f.flush()
+
+    saver = tf.train.Saver(max_to_keep=20)
 
     if not resume:
         fs.write("# predictions on the test set\n")
@@ -189,7 +269,6 @@ def main(arch_path, images_path, output_path, n_iter):
         f.flush()
         resume_iter = 0
         session.run(tf.global_variables_initializer())
-        tf.train.write_graph(session.graph_def, output_path, "graph.pb", False)
         f.write(" Done\n")
         f.flush()
 
@@ -213,9 +292,19 @@ def main(arch_path, images_path, output_path, n_iter):
         f.flush()
 
     def save_statistics(i):
-        if (i // 1000) % 2 == 1:
-            save_path = saver.save(session, '{}/iter/{:06d}.data'.format(output_path, i))
+        if (i // 1000) % 3 == 1:
+            data = np.zeros((1000, embedding_size))
+            for i in range(0, 1000, 100):
+                f.write('{}/{}\n'.format(i, 1000))
+                f.flush()
+                data[i: i+100] = session.run(embedding_input_flatten, feed_dict={ cnn.tfx: CNN.load(files_test[i: i+100]) })
+            session.run(embedding_assignment, feed_dict={ embedding_placeholder: data })
+
+            save_path = saver.save(session, '{}/tensorboard/model.ckpt'.format(output_path), i)
             f.write('Model saved in file: {}\n'.format(save_path))
+
+        save_path = saver.save(session, '{}/iter/{:06d}.data'.format(output_path, i))
+        f.write('Model saved in file: {}\n'.format(save_path))
 
         ps_test, xentropy_test = predict_all(session, CNN, cnn, files_test, f)
         ps_train, xentropy_train = predict_all(session, CNN, cnn, files_train[:len(files_test)], f)
@@ -268,15 +357,18 @@ def main(arch_path, images_path, output_path, n_iter):
                 run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
                 run_metadata = tf.RunMetadata()
 
-                xentropy = cnn.train(session, xs, ys, options=run_options, run_metadata=run_metadata)
+                xentropy, _ = cnn.train(session, xs, ys, options=run_options, run_metadata=run_metadata)
                 # google chrome : chrome://tracing/
 
                 tl = timeline.Timeline(run_metadata.step_stats)
                 ctf = tl.generate_chrome_trace_format()
                 with open(output_path + '/timeline.json', 'w') as tlf:
                     tlf.write(ctf)
+            elif i % 5 == 0:
+                xentropy, s = cnn.train(session, xs, ys, tensors=[summary])
+                writer.add_summary(s[0], i)
             else:
-                xentropy = cnn.train(session, xs, ys)
+                xentropy, _ = cnn.train(session, xs, ys)
 
             fx.write('{}    {:.6} \n'.format(i, xentropy))
 

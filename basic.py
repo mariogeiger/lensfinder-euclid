@@ -2,15 +2,23 @@
 """This module defines basic layers for tensorflow"""
 import tensorflow as tf
 
+def relu(x):
+    x = (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
+    tf.summary.histogram("relu", x)
+    return x
+
+
 def scaleandshift(x):
     f = x.get_shape().as_list()[-1]
     with tf.name_scope("scaleandshift"):
         a = tf.Variable(tf.constant(1.0, shape=[f]), name="g")
         b = tf.Variable(tf.constant(0.0, shape=[f]), name="b")
+        tf.summary.histogram("scale", a)
+        tf.summary.histogram("shift", b)
         return a * x + b
 
 
-def fullyconnected(x, f_out=None):
+def fullyconnected(x, f_out=None, activation=relu):
     f_in = x.get_shape().as_list()[1]
     if f_out is None:
         f_out = f_in
@@ -18,9 +26,19 @@ def fullyconnected(x, f_out=None):
     with tf.name_scope("fc_{}_{}".format(f_in, f_out)):
         W0 = tf.nn.l2_normalize(tf.random_normal([f_in, f_out]), [0])
         W = tf.Variable(W0, name="W")
-        return tf.matmul(x, W)
+        tf.summary.histogram("weights", W)
+        x = tf.matmul(x, W)
 
-def convolution(x, f_out=None, s=1, w=3, padding='VALID'):
+        b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
+        tf.summary.histogram("bias", b)
+        x = x + b
+
+        if activation is not None:
+            x = activation(x)
+        return x
+
+#pylint: disable=R0913
+def convolution(x, f_out=None, s=1, w=3, padding='VALID', activation=relu):
     f_in = x.get_shape().as_list()[3]
 
     if f_out is None:
@@ -29,11 +47,16 @@ def convolution(x, f_out=None, s=1, w=3, padding='VALID'):
     with tf.name_scope("conv_{}_{}".format(f_in, f_out)):
         F0 = tf.nn.l2_normalize(tf.random_normal([w, w, f_in, f_out]), [0, 1, 2])
         F = tf.Variable(F0, name="F")
-        return tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+        tf.summary.histogram("filters", F)
+        x = tf.nn.conv2d(x, F, [1, s, s, 1], padding)
 
+        b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
+        tf.summary.histogram("bias", b)
+        x = x + b
 
-def relu(x):
-    return (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
+        if activation is not None:
+            x = activation(x)
+        return x
 
 
 def max_pool(x):

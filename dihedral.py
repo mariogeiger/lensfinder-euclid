@@ -5,6 +5,11 @@ import tensorflow as tf
 import numpy as np
 
 
+def relu(x):
+    """ReLU compatible with normalization propagation"""
+    return (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
+
+
 def scaleandshift(x, input_repr='regular'):
     """Scale and shift a tensor en keep its representation"""
     assert input_repr == 'regular' or input_repr == 'invariant'
@@ -20,10 +25,12 @@ def scaleandshift(x, input_repr='regular'):
                 1.0, shape=[f // 8]), name="g"), [8])
             b = tf.tile(tf.Variable(tf.constant(
                 0.0, shape=[f // 8]), name="b"), [8])
+        tf.summary.histogram("scale", a)
+        tf.summary.histogram("shift", b)
         return a * x + b
 
 
-def fullyconnected(x, f_out=None, output_repr='regular'):
+def fullyconnected(x, f_out=None, output_repr='regular', activation=relu):
     """Fully connect a tensor which transforms with the regular representation
     with an output tensor which transforms either with the regular or invariant representation"""
     assert output_repr == 'regular' or output_repr == 'invariant'
@@ -39,7 +46,8 @@ def fullyconnected(x, f_out=None, output_repr='regular'):
         with tf.name_scope("fc_8x{}_8x{}".format(f_in // 8, f_out // 8)):
             W0 = tf.nn.l2_normalize(tf.random_normal([f_in, f_out // 8]), [0])
             W = tf.Variable(W0, name="W")
-            W = tf.split(0, 8, W)
+            tf.summary.histogram("weights", W)
+            W = tf.split(W, 8, 0)
 
             mt = np.array([
                 [0, 1, 2, 3, 4, 5, 6, 7], [1, 0, 3, 2, 5, 4, 7, 6],
@@ -51,24 +59,43 @@ def fullyconnected(x, f_out=None, output_repr='regular'):
             iv = np.array([0, 1, 2, 3, 4, 6, 5, 7])
             # tau[iv[a]] is the inverse of tau[a]
 
-            W = tf.concat(1, [  # merge 8 part of the output
-                tf.concat(0, [  # merge 8 part of the input
+            W = tf.concat([  # merge 8 part of the output
+                tf.concat([  # merge 8 part of the input
                     W[mt[iv[j], i]]
-                    for i in range(8)])
-                for j in range(8)])
+                    for i in range(8)], 0)
+                for j in range(8)], 1)
 
-            return tf.matmul(x, W)
+            x = tf.matmul(x, W)
+
+            b = tf.Variable(tf.constant(0.0, shape=[f_out // 8]), name="b")
+            tf.summary.histogram("bias", b)
+            x = x + tf.tile(b, [8])
+
+            if activation is not None:
+                x = activation(x)
+            return x
+
     if output_repr == 'invariant':
         with tf.name_scope("fc_8x{}_{}".format(f_in // 8, f_out)):
             W0 = tf.nn.l2_normalize(tf.random_normal([f_in // 8, f_out]), [0])
             W0 = W0 / math.sqrt(8)
             W = tf.Variable(W0, name="W")
+            tf.summary.histogram("weights", W)
             W = tf.tile(W, [8, 1])
-            return tf.matmul(x, W)
+            x = tf.matmul(x, W)
 
-# pylint: disable=R0913
+            b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
+            tf.summary.histogram("bias", b)
+            x = x + b
+
+            if activation is not None:
+                x = activation(x)
+            return x
+
+# pylint: disable=R0913, R0915
 def convolution(x, f_out=None, s=1, w=3,
-                input_repr='regular', output_repr='regular', padding='VALID'):
+                input_repr='regular', output_repr='regular', padding='VALID',
+                activation=relu):
     """The input and output tensor must tranform with the
      defining x (invariant / regular) representation
     where the x represent the tensor product between
@@ -82,16 +109,17 @@ def convolution(x, f_out=None, s=1, w=3,
     def filters(d_in, d_out):
         F0 = tf.nn.l2_normalize(tf.random_normal([w, w, d_in, d_out]), [0, 1, 2])
         F = tf.Variable(F0, name="F")
+        tf.summary.histogram("filter", F)
 
         Fs = [None] * 8
         Fs[0] = F  # tau[0]
-        Fs[1] = tf.reverse(F, [False, True, False, False])  # tau[1]
-        Fs[2] = tf.reverse(F, [True, False, False, False])  # tau[2]
-        Fs[3] = tf.reverse(F, [True, True, False, False])  # tau[3]
+        Fs[1] = tf.reverse(F, [1])  # tau[1]
+        Fs[2] = tf.reverse(F, [0])  # tau[2]
+        Fs[3] = tf.reverse(F, [0, 1])  # tau[3]
         Fs[4] = tf.transpose(F, [1, 0, 2, 3])  # tau[4]
-        Fs[5] = tf.reverse(Fs[4], [False, True, False, False])  # tau[5]
-        Fs[6] = tf.reverse(Fs[4], [True, False, False, False])  # tau[6]
-        Fs[7] = tf.reverse(Fs[4], [True, True, False, False])  # tau[7]
+        Fs[5] = tf.reverse(Fs[4], [1])  # tau[5]
+        Fs[6] = tf.reverse(Fs[4], [0])  # tau[6]
+        Fs[7] = tf.reverse(Fs[4], [0, 1])  # tau[7]
         # Fs[j] = tau[j] F
         return Fs
 
@@ -101,7 +129,7 @@ def convolution(x, f_out=None, s=1, w=3,
         assert f_in % 8 == 0 and f_out % 8 == 0
 
         with tf.name_scope("conv_8x{}_8x{}".format(f_in // 8, f_out // 8)):
-            Fs = [tf.split(2, 8, F) for F in filters(f_in, f_out // 8)]
+            Fs = [tf.split(F, 8, 2) for F in filters(f_in, f_out // 8)]
             # Fs[j][i] = tau[j] F_i
 
             mt = np.array([
@@ -114,14 +142,22 @@ def convolution(x, f_out=None, s=1, w=3,
             iv = np.array([0, 1, 2, 3, 4, 6, 5, 7])
             # tau[iv[a]] is the inverse of tau[a]
 
-            F = tf.concat(3, [  # merge 8 part of the output
-                tf.concat(2, [  # merge 8 part of the input
+            F = tf.concat([  # merge 8 part of the output
+                tf.concat([  # merge 8 part of the input
                     Fs[j][mt[iv[j], i]]
-                    for i in range(8)])
-                for j in range(8)])
+                    for i in range(8)], 2)
+                for j in range(8)], 3)
 
             # y = Conv(x, W)
-            return tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+            x = tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+
+            b = tf.Variable(tf.constant(0.0, shape=[f_out // 8]), name="b")
+            tf.summary.histogram("bias", b)
+            x = x + tf.tile(b, [8])
+
+            if activation is not None:
+                x = activation(x)
+            return x
 
     if input_repr == 'invariant' and output_repr == 'regular':
         if f_out is None:
@@ -129,8 +165,16 @@ def convolution(x, f_out=None, s=1, w=3,
         assert f_out % 8 == 0
 
         with tf.name_scope("conv_{}_8x{}".format(f_in, f_out // 8)):
-            F = tf.concat(3, filters(f_in, f_out // 8))
-            return tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+            F = tf.concat(filters(f_in, f_out // 8), 3)
+            x = tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+
+            b = tf.Variable(tf.constant(0.0, shape=[f_out // 8]), name="b")
+            tf.summary.histogram("bias", b)
+            x = x + tf.tile(b, [8])
+
+            if activation is not None:
+                x = activation(x)
+            return x
 
     if input_repr == 'regular' and output_repr == 'invariant':
         if f_out is None:
@@ -138,13 +182,16 @@ def convolution(x, f_out=None, s=1, w=3,
         assert f_in % 8 == 0
 
         with tf.name_scope("conv_8x{}_{}".format(f_in // 8, f_out)):
-            F = tf.multiply(tf.concat(2, filters(f_in // 8, f_out)), 1 / math.sqrt(8))
-            return tf.nn.conv2d(x, F, [1, s, s, 1], padding)
+            F = tf.multiply(tf.concat(filters(f_in // 8, f_out), 2), 1 / math.sqrt(8))
+            x = tf.nn.conv2d(x, F, [1, s, s, 1], padding)
 
+            b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
+            tf.summary.histogram("bias", b)
+            x = x + b
 
-def relu(x):
-    """ReLU compatible with normalization propagation"""
-    return (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
+            if activation is not None:
+                x = activation(x)
+            return x
 
 
 def max_pool(x):
@@ -161,7 +208,7 @@ def pool(x):
     assert f_in % 8 == 0
 
     with tf.name_scope("dihedral_pool_8x{}".format(f_in // 8)):
-        xs = tf.split(len(shape) - 1, 8, x)
+        xs = tf.split(x, 8, len(shape) - 1)
         return tf.add_n(xs)
 
 
@@ -173,9 +220,9 @@ def concat(xs):
     assert all([len(s) == len(ss[0]) for s in ss])
     assert all([s[:-1] == ss[0][:-1] for s in ss])
     f_dim = len(ss[0]) - 1
-    xs = [tf.split(f_dim, 8, xs[i]) for i in range(len(xs))]
-    xs = [tf.concat(f_dim, ys) for ys in zip(*xs)]
-    return tf.concat(f_dim, xs)
+    xs = [tf.split(xs[i], 8, f_dim) for i in range(len(xs))]
+    xs = [tf.concat(ys, f_dim) for ys in zip(*xs)]
+    return tf.concat(xs, f_dim)
 
 # pylint: disable=E1101
 def batch_normalization(x, acc, input_repr='regular'):

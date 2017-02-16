@@ -48,78 +48,89 @@ class CNN:
         self.tfacc = None
         self.train_counter = 0
         self.test = None
+        self.embedding_input = None
 
 
     def NN(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 16, w=4))) # 98
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 96
+        x = nn.convolution(x, 16, w=4) # 98
+        x = nn.convolution(x) # 96
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 48, 48, 16]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 32))) # 46
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 44
+        x = nn.convolution(x, 32) # 46
+        x = nn.convolution(x) # 44
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 22, 22, 32]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 64))) # 20
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 18
+        x = nn.convolution(x, 64) # 20
+        x = nn.convolution(x) # 18
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 9, 9, 64]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 128))) # 7
+        x = nn.convolution(x, 128) # 7
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 5
+        x = nn.convolution(x) # 5
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 5, 5, 128]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 1024, w=5)))
+        x = nn.convolution(x, 1024, w=5)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 1, 1, 1024]
         x = tf.reshape(x, [-1, x.get_shape().as_list()[-1]])
+        self.embedding_input = x
 
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 1024)))
+        x = nn.fullyconnected(x, 1024)
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 1024)))
+        x = nn.fullyconnected(x, 1024)
         x = nn.batch_normalization(x, self.tfacc)
         self.test = x
 
-        x = nn.scaleandshift(nn.fullyconnected(x, 1))
+        x = nn.fullyconnected(x, 1, activation=None)
         return x
 
-
+    ########################################################################
     def create_architecture(self, bands):
         self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [])
         self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [])
         x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands])
         # mean = 0 and std = 1
 
-        x = self.NN(x)
+        if bands == 1:
+            tf.summary.image("input", x, 3)
+        else:
+            tf.summary.image("input", x[:,:,:,:3], 3)
+
+        with tf.name_scope("nn"):
+            x = self.NN(x)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 1]
         self.tfp = tf.nn.sigmoid(tf.reshape(x, [-1]))
 
-        self.tfy = tf.placeholder(tf.float32, [None])
-        xent = tf.nn.sigmoid_cross_entropy_with_logits(x, tf.reshape(self.tfy, [-1, 1]))
-        # [None, 1]
-        self.xent = tf.reduce_mean(xent)
+        with tf.name_scope("xent"):
+            self.tfy = tf.placeholder(tf.float32, [None])
+            xent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=tf.reshape(self.tfy, [-1, 1]))
+            # [None, 1]
+            self.xent = tf.reduce_mean(xent)
+            tf.summary.scalar("xent", self.xent)
 
-        self.tftrain_step = tf.train.AdamOptimizer(0.001).minimize(self.xent)
+        with tf.name_scope("train"):
+            self.tftrain_step = tf.train.AdamOptimizer(0.001).minimize(self.xent)
 
     @staticmethod
     def split_test_train(path):
@@ -165,16 +176,19 @@ class CNN:
 
         return xs, ys
 
-    def train(self, session, xs, ys, options=None, run_metadata=None):
+    def train(self, session, xs, ys, options=None, run_metadata=None, tensors=None):
+        if tensors is None:
+            tensors = []
+
         acc = 0.6 ** (self.train_counter / 1000.0)
         kp = 0.5 + 0.5 * 0.5 ** (self.train_counter / 2000.0)
 
-        _, xentropy = session.run([self.tftrain_step, self.xent],
+        output = session.run([self.tftrain_step, self.xent] + tensors,
             feed_dict={self.tfx: xs, self.tfy: ys, self.tfkp: kp, self.tfacc: acc},
             options=options, run_metadata=run_metadata)
 
         self.train_counter += 1
-        return xentropy
+        return output[1], output[2:]
 
     def predict_naive(self, session, images):
         return session.run(self.tfp, feed_dict={self.tfx: images})

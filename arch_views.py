@@ -50,42 +50,43 @@ class CNN:
         self.tfacc = None
         self.train_counter = 0
         self.test = None
+        self.embedding_input = None
 
 
     def NN1(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 16, w=4))) # 98
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 96
+        x = nn.convolution(x, 16, w=4) # 98
+        x = nn.convolution(x) # 96
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 48, 48, 16]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 32))) # 46
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 44
+        x = nn.convolution(x, 32) # 46
+        x = nn.convolution(x) # 44
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 22, 22, 32]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 64))) # 20
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 18
+        x = nn.convolution(x, 64) # 20
+        x = nn.convolution(x) # 18
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 9, 9, 64]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 128))) # 7
+        x = nn.convolution(x, 128) # 7
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.convolution(x))) # 5
+        x = nn.convolution(x) # 5
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 5, 5, 128]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 1024, w=5)))
+        x = nn.convolution(x, 1024, w=5)
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 1, 1, 1024]
@@ -93,17 +94,17 @@ class CNN:
 
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 1024)))
+        x = nn.fullyconnected(x, 1024)
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 1024)))
+        x = nn.fullyconnected(x, 1024)
         x = nn.batch_normalization(x, self.tfacc)
         self.test = x
 
-        x = nn.scaleandshift(nn.fullyconnected(x, 2))
+        x = nn.fullyconnected(x, 2, activation=None)
         return x
 
-
+    ########################################################################
     def NN2(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
 
@@ -111,37 +112,37 @@ class CNN:
 
         ############################################################
         assert x.get_shape().as_list()[:3] == [None, 45, 45]
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 16, w=5))) # 41
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 19, w=5))) # 37
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 23, w=5))) # 33
+        x = nn.convolution(x, 16, w=5) # 41
+        x = nn.convolution(x, 19, w=5) # 37
+        x = nn.convolution(x, 23, w=5) # 33
         x = nn.batch_normalization(x, self.tfacc)
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 27, w=5))) # 29
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 33, w=5))) # 25
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 39, w=5))) # 21
+        x = nn.convolution(x, 27, w=5) # 29
+        x = nn.convolution(x, 33, w=5) # 25
+        x = nn.convolution(x, 39, w=5) # 21
         x = nn.batch_normalization(x, self.tfacc)
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 47, w=5))) # 17
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 57, w=5))) # 13
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 68, w=5))) # 9
+        x = nn.convolution(x, 47, w=5) # 17
+        x = nn.convolution(x, 57, w=5) # 13
+        x = nn.convolution(x, 68, w=5) # 9
         x = nn.batch_normalization(x, self.tfacc)
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 82, w=5))) # 5
+        x = nn.convolution(x, 82, w=5) # 5
 
         ############################################################
         assert x.get_shape().as_list() == [None, 5, 5, 82]
         x = tf.nn.dropout(x, self.tfkp)
-        x = nn.relu(nn.scaleandshift(nn.convolution(x, 256, w=5))) # 1
+        x = nn.convolution(x, 256, w=5) # 1
 
         ############################################################
         assert x.get_shape().as_list() == [None, 1, 1, 256]
         x = tf.reshape(x, [-1, 256])
 
         x = tf.nn.dropout(x, self.tfkp)
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 512)))
+        x = nn.fullyconnected(x, 512)
 
         x = tf.nn.dropout(x, self.tfkp)
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 512)))
+        x = nn.fullyconnected(x, 512)
         x = nn.batch_normalization(x, self.tfacc)
 
-        x = nn.scaleandshift(nn.fullyconnected(x, 2))
+        x = nn.fullyconnected(x, 2, activation=None)
         return x
 
 
@@ -151,32 +152,44 @@ class CNN:
         x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands])
         # mean = 0 and std = 1
 
-        x1 = self.NN1(x)
+        if bands == 1:
+            tf.summary.image("input", x, 3)
+        else:
+            tf.summary.image("input", x[:,:,:,:3], 3)
+
+        with tf.name_scope("nn1"):
+            x1 = self.NN1(x)
         tv1 = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
-        x2 = self.NN2(x)
+        with tf.name_scope("nn2"):
+            x2 = self.NN2(x)
         tv2 = [x for x in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) if not x in tv1]
 
-        x = tf.concat(1, [x1, x2])
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 8)))
-        x = nn.relu(nn.scaleandshift(nn.fullyconnected(x, 8)))
-        x = nn.scaleandshift(nn.fullyconnected(x, 1))
+        with tf.name_scope("nn3"):
+            x = tf.concat([x1, x2], 1)
+            self.embedding_input = x
+            x = nn.fullyconnected(x, 8)
+            x = nn.fullyconnected(x, 8)
+            x = nn.fullyconnected(x, 1, activation=None)
         tv_join = [x for x in tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES) if not x in tv1 and not x in tv2]
 
         ########################################################################
         assert x.get_shape().as_list() == [None, 1]
         self.tfp = tf.nn.sigmoid(tf.reshape(x, [-1]))
 
-        self.tfy = tf.placeholder(tf.float32, [None])
-        xent = tf.nn.sigmoid_cross_entropy_with_logits(x, tf.reshape(self.tfy, [-1, 1]))
-        # [None, 1]
-        self.xent = tf.reduce_mean(xent)
+        with tf.name_scope("xent"):
+            self.tfy = tf.placeholder(tf.float32, [None])
+            xent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=tf.reshape(self.tfy, [-1, 1]))
+            # [None, 1]
+            self.xent = tf.reduce_mean(xent)
+            tf.summary.scalar("xent", self.xent)
 
-        self.tftrain1 = tf.train.AdamOptimizer(0.001).minimize(
-            self.xent, var_list=tv1 + tv_join)
-        self.tftrain2 = tf.train.AdamOptimizer(0.001).minimize(
-            self.xent, var_list=tv2 + tv_join)
-        self.tftrain_all = tf.train.AdamOptimizer(0.001).minimize(
-            self.xent, var_list=tv1 + tv2 + tv_join)
+        with tf.name_scope("train"):
+            self.tftrain1 = tf.train.AdamOptimizer(0.001).minimize(
+                self.xent, var_list=tv1 + tv_join)
+            self.tftrain2 = tf.train.AdamOptimizer(0.001).minimize(
+                self.xent, var_list=tv2 + tv_join)
+            self.tftrain_all = tf.train.AdamOptimizer(0.001).minimize(
+                self.xent, var_list=tv1 + tv2 + tv_join)
 
     @staticmethod
     def split_test_train(path):
@@ -222,7 +235,10 @@ class CNN:
 
         return xs, ys
 
-    def train(self, session, xs, ys, options=None, run_metadata=None):
+    def train(self, session, xs, ys, options=None, run_metadata=None, tensors=None):
+        if tensors is None:
+            tensors = []
+
         if self.train_counter < 10000:
             train = self.tftrain1
             x = self.train_counter
@@ -236,12 +252,12 @@ class CNN:
         acc = 0.6 ** (x / 1000.0)
         kp = 0.5 + 0.5 * 0.5 ** (x / 2000.0)
 
-        _, xentropy = session.run([train, self.xent],
+        output = session.run([train, self.xent] + tensors,
             feed_dict={self.tfx: xs, self.tfy: ys, self.tfkp: kp, self.tfacc: acc},
             options=options, run_metadata=run_metadata)
 
         self.train_counter += 1
-        return xentropy
+        return output[1], output[2:]
 
     def predict_naive(self, session, images):
         return session.run(self.tfp, feed_dict={self.tfx: images})

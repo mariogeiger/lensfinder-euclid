@@ -7,6 +7,7 @@ python v3 is needed with the following libraries:
 - `numpy`
 - `astropy`
 - `sklearn`
+- `scipy`
 
 
     sudo apt-get install python3-numpy python3-astropy python3-sklearn python3-pip

@@ -1,32 +1,36 @@
 # pylint: disable=C0103,R0204,C0111
-"""This module defines basic layers for tensorflow"""
+"""This module defines basic layers for tensorflow
+Two principles are repected:
+    - after initialisation, the normalisation in maintained
+    - the wieghts are normalized and the bias are add to normiled data"""
+import math
 import tensorflow as tf
 
+
 def relu(x):
-    x = (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
-    tf.summary.histogram("relu", x)
-    return x
+    return (tf.nn.relu(x) - 0.3989422804014327) * 1.712858550449663
 
 
-def scaleandshift(x):
+def scaleandshift(x, a0=1, b0=0):
     f = x.get_shape().as_list()[-1]
     with tf.name_scope("scaleandshift"):
-        a = tf.Variable(tf.constant(1.0, shape=[f]), name="g")
-        b = tf.Variable(tf.constant(0.0, shape=[f]), name="b")
+        a = tf.Variable(tf.constant(a0, dtype=tf.float32, shape=[f]), name="g")
+        b = tf.Variable(tf.constant(b0, dtype=tf.float32, shape=[f]), name="b")
         tf.summary.histogram("scale", a)
         tf.summary.histogram("shift", b)
         return a * x + b
 
 
-def fullyconnected(x, f_out=None, activation=relu):
+def fullyconnected(x, f_out=None, activation=relu, name='fc'):
     f_in = x.get_shape().as_list()[1]
     if f_out is None:
         f_out = f_in
 
-    with tf.name_scope("fc_{}_{}".format(f_in, f_out)):
-        W0 = tf.nn.l2_normalize(tf.random_normal([f_in, f_out]), [0])
+    with tf.name_scope("{}-{}-{}".format(name, f_in, f_out)):
+        W0 = tf.random_normal([f_in, f_out])
         W = tf.Variable(W0, name="W")
         tf.summary.histogram("weights", W)
+        W = W / math.sqrt(f_in)
         x = tf.matmul(x, W)
 
         b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
@@ -38,16 +42,17 @@ def fullyconnected(x, f_out=None, activation=relu):
         return x
 
 #pylint: disable=R0913
-def convolution(x, f_out=None, s=1, w=3, padding='VALID', activation=relu):
+def convolution(x, f_out=None, s=1, w=3, padding='VALID', activation=relu, name='conv'):
     f_in = x.get_shape().as_list()[3]
 
     if f_out is None:
         f_out = f_in
 
-    with tf.name_scope("conv_{}_{}".format(f_in, f_out)):
-        F0 = tf.nn.l2_normalize(tf.random_normal([w, w, f_in, f_out]), [0, 1, 2])
+    with tf.name_scope("{}-{}-{}".format(name, f_in, f_out)):
+        F0 = tf.random_normal([w, w, f_in, f_out])
         F = tf.Variable(F0, name="F")
-        tf.summary.histogram("filters", F)
+        tf.summary.histogram("filter", F)
+        F = F / math.sqrt(w * w * f_in)
         x = tf.nn.conv2d(x, F, [1, s, s, 1], padding)
 
         b = tf.Variable(tf.constant(0.0, shape=[f_out]), name="b")
@@ -60,8 +65,9 @@ def convolution(x, f_out=None, s=1, w=3, padding='VALID', activation=relu):
 
 
 def max_pool(x):
-    x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
-    return (x - 1.1) / 1.2
+    with tf.name_scope("max_pool"):
+        x = tf.nn.max_pool(x, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+        return scaleandshift(x, 0.83, -0.92)
 
 
 def batch_normalization(x, acc):
@@ -75,11 +81,13 @@ def batch_normalization(x, acc):
 
     acc = tf.convert_to_tensor(acc, dtype=tf.float32, name="accumulator")
 
-    with tf.name_scope("bn_{}".format(f_in)):
+    with tf.name_scope("bn-{}".format(f_in)):
         m, v = moments(x, axes=list(range(len(shape) - 1)))
 
         acc_m = tf.Variable(tf.constant(0.0, shape=[f_in]), trainable=False, name="acc_m")
         acc_v = tf.Variable(tf.constant(1.0, shape=[f_in]), trainable=False, name="acc_v")
+        tf.summary.histogram("acc_m", acc_m)
+        tf.summary.histogram("acc_v", acc_v)
 
         m = tf.assign(acc_m, (1.0 - acc) * acc_m + acc * m)
         v = tf.assign(acc_v, (1.0 - acc) * acc_v + acc * v)
@@ -88,4 +96,6 @@ def batch_normalization(x, acc):
 
         beta = tf.Variable(tf.constant(0.0, shape=[f_in]))
         gamma = tf.Variable(tf.constant(1.0, shape=[f_in]))
+        tf.summary.histogram("beta", beta)
+        tf.summary.histogram("gamma", gamma)
         return tf.nn.batch_normalization(x, m, v, beta, gamma, 1e-3)

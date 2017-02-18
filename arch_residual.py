@@ -1,39 +1,30 @@
 # pylint: disable=C,R,no-member
 import tensorflow as tf
 import numpy as np
-import basic as nn
+import dihedral as nn
 
+def res_layer(x, f_out=None, w=3, n=1, input_repr='regular', output_repr='regular'):
+    f_in = x.get_shape().as_list()[3]
+    assert w % 2 == 1
+    if f_out is None:
+        f_out = f_in
 
-def dihedral(x, i):
-    if len(x.shape) == 3:
-        if i & 4:
-            y = np.transpose(x, (1, 0, 2))
+    with tf.name_scope("res_layer"):
+        b = (w // 2) * n
+        s = x[:, b:-b, b:-b, :] # VALID padding
+        if f_in != f_out or input_repr != output_repr:
+            s = nn.convolution(s, f_out, w=1, input_repr=input_repr, output_repr=output_repr, name="shortcut")
+
+        if n == 1:
+            x = nn.convolution(x, f_out, w=w, input_repr=input_repr, output_repr=output_repr)
         else:
-            y = x.copy()
+            x = nn.convolution(x, f_out, w=w, input_repr=input_repr, output_repr='regular')
+            for _ in range(n - 2):
+                x = nn.convolution(x, f_out, w=w, input_repr='regular', output_repr='regular')
+            x = nn.convolution(x, f_out, w=w, input_repr='regular', output_repr=output_repr)
 
-        if i&3 == 0:
-            return y
-        if i&3 == 1:
-            return y[:, ::-1]
-        if i&3 == 2:
-            return y[::-1, :]
-        if i&3 == 3:
-            return y[::-1, ::-1]
-
-    if len(x.shape) == 4:
-        if i & 4:
-            y = np.transpose(x, (0, 2, 1, 3))
-        else:
-            y = x.copy()
-
-        if i&3 == 0:
-            return y
-        if i&3 == 1:
-            return y[:, :, ::-1]
-        if i&3 == 2:
-            return y[:, ::-1, :]
-        if i&3 == 3:
-            return y[:, ::-1, ::-1]
+        x = 0.7071067811865475 * (s + x)
+        return x
 
 class CNN:
     # pylint: disable=too-many-instance-attributes
@@ -53,54 +44,52 @@ class CNN:
 
     def NN(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
-        x = nn.convolution(x, 16, w=4) # 98
-        x = nn.convolution(x) # 96
+        x = nn.convolution(x, 8*4, w=2, input_repr='invariant') # 100
+
+        ########################################################################
+        assert x.get_shape().as_list() == [None, 100, 100, 8*4]
+        x = res_layer(x, n=2) # 96
+        x = nn.batch_normalization(x, self.tfacc)
+        x = res_layer(x, n=2) # 92
         x = nn.max_pool(x)
+
+        ########################################################################
+        assert x.get_shape().as_list() == [None, 46, 46, 8*4]
+        x = res_layer(x, 8*8, n=3) # 40
+        x = nn.batch_normalization(x, self.tfacc)
+        x = res_layer(x, n=2) # 36
+        x = nn.max_pool(x)
+
+        ########################################################################
+        assert x.get_shape().as_list() == [None, 18, 18, 8*8]
+        x = res_layer(x, 8*16, n=2) # 14
+        x = nn.batch_normalization(x, self.tfacc)
+
+        x = res_layer(x, 8*23, n=2) # 10
+        x = nn.batch_normalization(x, self.tfacc)
+
+        x = res_layer(x, 8*32, n=3) # 4
         x = nn.batch_normalization(x, self.tfacc)
 
         ########################################################################
-        assert x.get_shape().as_list() == [None, 48, 48, 16]
-        x = nn.convolution(x, 32) # 46
-        x = nn.convolution(x) # 44
-        x = nn.max_pool(x)
-        x = nn.batch_normalization(x, self.tfacc)
-
-        ########################################################################
-        assert x.get_shape().as_list() == [None, 22, 22, 32]
-        x = nn.convolution(x, 64) # 20
-        x = nn.convolution(x) # 18
-        x = nn.max_pool(x)
-        x = nn.batch_normalization(x, self.tfacc)
+        assert x.get_shape().as_list() == [None, 4, 4, 8*32]
+        x = nn.convolution(x, 8*128, w=4)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
-        assert x.get_shape().as_list() == [None, 9, 9, 64]
-        x = nn.convolution(x, 128) # 7
-        x = tf.nn.dropout(x, self.tfkp)
-
-        x = nn.convolution(x) # 5
-        x = nn.batch_normalization(x, self.tfacc)
-        x = tf.nn.dropout(x, self.tfkp)
-
-        ########################################################################
-        assert x.get_shape().as_list() == [None, 5, 5, 128]
-        x = nn.convolution(x, 1024, w=5)
-
-        ########################################################################
-        assert x.get_shape().as_list() == [None, 1, 1, 1024]
+        assert x.get_shape().as_list() == [None, 1, 1, 8*128]
         x = tf.reshape(x, [-1, x.get_shape().as_list()[-1]])
+
         self.embedding_input = x
 
+        x = nn.fullyconnected(x, 8*256)
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.fullyconnected(x, 1024)
-        x = tf.nn.dropout(x, self.tfkp)
-
-        x = nn.fullyconnected(x, 1024)
+        x = nn.fullyconnected(x, 8*256)
         x = nn.batch_normalization(x, self.tfacc)
         self.test = x
 
-        x = nn.fullyconnected(x, 1, activation=None)
+        x = nn.fullyconnected(x, 1, output_repr='invariant', activation=None)
         return x
 
     ########################################################################
@@ -172,7 +161,7 @@ class CNN:
         for i in range(len(xs)):
             s = np.random.uniform(0.8, 1.2)
             u = np.random.uniform(-0.1, 0.1)
-            xs[i] = dihedral(xs[i], np.random.randint(8)) * s + u
+            xs[i] = xs[i] * s + u
 
         return xs, ys
 
@@ -190,26 +179,8 @@ class CNN:
         self.train_counter += 1
         return output[1], output[2:]
 
-    def predict_naive(self, session, images):
+    def predict(self, session, images):
         return session.run(self.tfp, feed_dict={self.tfx: images})
 
-    def predict_naive_xentropy(self, session, images, labels):
-        return session.run([self.tfp, self.xent], feed_dict={self.tfx: images, self.tfy: labels})
-
-    def predict(self, session, images):
-        # exploit symmetries to make better predictions
-        ps = self.predict_naive(session, images)
-
-        for i in range(1, 8):
-            ps *= self.predict_naive(session, dihedral(images, i))
-
-        return ps
-
     def predict_xentropy(self, session, images, labels):
-        # exploit symmetries to make better predictions
-        ps, xent = self.predict_naive_xentropy(session, images, labels)
-
-        for i in range(1, 8):
-            ps *= self.predict_naive(session, dihedral(images, i))
-
-        return ps, xent
+        return session.run([self.tfp, self.xent], feed_dict={self.tfx: images, self.tfy: labels})

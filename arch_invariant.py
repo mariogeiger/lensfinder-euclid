@@ -98,7 +98,7 @@ class CNN:
             tf.summary.scalar("xent", self.xent)
 
         with tf.name_scope("train"):
-            self.tftrain_step = tf.train.AdamOptimizer(0.001).minimize(self.xent)
+            self.tftrain_step = tf.train.AdamOptimizer(1e-4).minimize(self.xent)
 
     @staticmethod
     def split_test_train(path):

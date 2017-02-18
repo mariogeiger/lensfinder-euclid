@@ -130,7 +130,6 @@ def main(arch_path, images_path, output_path, n_iter):
         resume = False
         os.makedirs(output_path)
         os.makedirs(output_path + '/iter')
-        os.makedirs(output_path + '/tensorboard')
         f = open(output_path + '/log.txt', 'w')
         fs = open(output_path + '/stats_test.txt', 'w')
         fst = open(output_path + '/stats_train.txt', 'w')
@@ -165,6 +164,7 @@ def main(arch_path, images_path, output_path, n_iter):
 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
+    config.graph_options.optimizer_options.global_jit_level = tf.OptimizerOptions.ON_1
     session = tf.Session(config=config)
 
     f.write(" Done\nCreate graph...")
@@ -214,11 +214,12 @@ def main(arch_path, images_path, output_path, n_iter):
         images = images[:, :, :, :3]
     sprite = images_to_sprite(images)
     scipy.misc.imsave(output_path + '/tensorboard/sprite.png', sprite)
-    all_labels = labels_test[:1000]
     metadata_file = open(output_path + '/tensorboard/labels.tsv', 'w')
-    metadata_file.write('Name\tClass\n')
-    for ll in range(len(all_labels)):
-        metadata_file.write('{:06d}\t{}\n'.format(ll, all_labels[ll]))
+    metadata_file.write('id\tis_lens\tnumb_pix_lensed_image\teinstein_area\tflux_lensed_image_in_sigma\n')
+    for i in range(1000):
+        with np.load(files_test[i]) as data:
+            is_lens = data['is_lens']
+            metadata_file.write('{}\t{}\t{}\t{}\t{}\n'.format(data['id'], is_lens, is_lens * data['numb_pix_lensed_image'], is_lens * data['einstein_area'], is_lens * data['flux_lensed_image_in_sigma']))
     metadata_file.close()
 
     embedding_size = np.prod(cnn.embedding_input.get_shape().as_list()[1:])
@@ -294,10 +295,10 @@ def main(arch_path, images_path, output_path, n_iter):
     def save_statistics(i):
         if (i // 1000) % 3 == 1:
             data = np.zeros((1000, embedding_size))
-            for i in range(0, 1000, 100):
-                f.write('{}/{}\n'.format(i, 1000))
+            for j in range(0, 1000, 100):
+                f.write('{}/{}\n'.format(j, 1000))
                 f.flush()
-                data[i: i+100] = session.run(embedding_input_flatten, feed_dict={ cnn.tfx: CNN.load(files_test[i: i+100]) })
+                data[j: j+100] = session.run(embedding_input_flatten, feed_dict={ cnn.tfx: CNN.load(files_test[j: j+100]) })
             session.run(embedding_assignment, feed_dict={ embedding_placeholder: data })
 
             save_path = saver.save(session, '{}/tensorboard/model.ckpt'.format(output_path), i)
@@ -325,6 +326,13 @@ def main(arch_path, images_path, output_path, n_iter):
         fs.flush()
         fst.write("{} {}\n".format(i, " ".join(["{:.12g}".format(p) for p in ps_train])))
         fst.flush()
+
+        s = tf.Summary()
+        s.value.add(tag="xent_test", simple_value=xentropy_test)
+        s.value.add(tag="xent_train", simple_value=xentropy_train)
+        s.value.add(tag="auc_test", simple_value=auc_test)
+        s.value.add(tag="auc_train", simple_value=auc_train)
+        writer.add_summary(s, i)
 
         #make_fits(files_test, labels_test == 1, ps_test > 0.5, output_path + '/iter', "_{:06d}".format(i))
 
@@ -364,7 +372,7 @@ def main(arch_path, images_path, output_path, n_iter):
                 ctf = tl.generate_chrome_trace_format()
                 with open(output_path + '/timeline.json', 'w') as tlf:
                     tlf.write(ctf)
-            elif i % 5 == 0:
+            elif i % 50 == 0:
                 xentropy, s = cnn.train(session, xs, ys, tensors=[summary])
                 writer.add_summary(s[0], i)
             else:

@@ -184,11 +184,11 @@ class CNN:
             tf.summary.scalar("xent", self.xent)
 
         with tf.name_scope("train"):
-            self.tftrain1 = tf.train.AdamOptimizer(0.001).minimize(
+            self.tftrain1 = tf.train.AdamOptimizer(1e-4).minimize(
                 self.xent, var_list=tv1 + tv_join)
-            self.tftrain2 = tf.train.AdamOptimizer(0.001).minimize(
+            self.tftrain2 = tf.train.AdamOptimizer(1e-4).minimize(
                 self.xent, var_list=tv2 + tv_join)
-            self.tftrain_all = tf.train.AdamOptimizer(0.001).minimize(
+            self.tftrain_all = tf.train.AdamOptimizer(1e-4).minimize(
                 self.xent, var_list=tv1 + tv2 + tv_join)
 
     @staticmethod

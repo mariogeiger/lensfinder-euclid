@@ -2,7 +2,7 @@
 
 ## required software
 
-python v3 is needed with the following libraries:
+python 3.5+ is needed with the following libraries:
 - `tensorflow` ([install tensorflow](https://www.tensorflow.org/install/))
 - `numpy` (`sudo apt-get install python3-numpy`)
 - `astropy` (`sudo apt-get install python3-astropy`)
@@ -28,7 +28,6 @@ python v3 is needed with the following libraries:
 
     python3 predict.py arch_baseline.py trained_variables/space_based/baseline output.txt samples/space_based/lens
 
-The way is load the architecture python script it needs python 3.5+
 ## train script
 
 The training set can be download at [the challenge page](http://metcalf1.bo.astro.it/blf-portal/gg_challenge.html).

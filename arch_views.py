@@ -1,7 +1,7 @@
 # pylint: disable=C,R,no-member
 import tensorflow as tf
 import numpy as np
-import basic as nn
+import layers_normal as nn
 
 
 def dihedral(x, i):
@@ -34,6 +34,10 @@ def dihedral(x, i):
             return y[:, ::-1, :]
         if i&3 == 3:
             return y[:, ::-1, ::-1]
+
+def summary_images(x, name):
+    for i in range(min(4, x.get_shape().as_list()[3])):
+        tf.summary.image("{}-{}".format(name, i), x[:, :, :, i:i+1])
 
 class CNN:
     # pylint: disable=too-many-instance-attributes
@@ -81,6 +85,7 @@ class CNN:
         x = tf.nn.dropout(x, self.tfkp)
 
         x = nn.convolution(x) # 5
+        summary_images(x, "nn1")
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
@@ -125,6 +130,7 @@ class CNN:
         x = nn.convolution(x, 68, w=5) # 9
         x = nn.batch_normalization(x, self.tfacc)
         x = nn.convolution(x, 82, w=5) # 5
+        summary_images(x, "nn2")
 
         ############################################################
         assert x.get_shape().as_list() == [None, 5, 5, 82]
@@ -147,15 +153,12 @@ class CNN:
 
 
     def create_architecture(self, bands):
-        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [])
-        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [])
-        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands])
+        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [], name="kp")
+        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [], name="acc")
+        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands], name="input")
         # mean = 0 and std = 1
 
-        if bands == 1:
-            tf.summary.image("input", x, 3)
-        else:
-            tf.summary.image("input", x[:,:,:,:3], 3)
+        summary_images(x, "input")
 
         with tf.name_scope("nn1"):
             x1 = self.NN1(x)
@@ -181,7 +184,6 @@ class CNN:
             xent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=tf.reshape(self.tfy, [-1, 1]))
             # [None, 1]
             self.xent = tf.reduce_mean(xent)
-            tf.summary.scalar("xent", self.xent)
 
         with tf.name_scope("train"):
             self.tftrain1 = tf.train.AdamOptimizer(1e-4).minimize(

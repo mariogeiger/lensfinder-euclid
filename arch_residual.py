@@ -1,9 +1,41 @@
 # pylint: disable=C,R,no-member
 import tensorflow as tf
 import numpy as np
-import dihedral as nn
+import layers_normal as nn
 
-def res_layer(x, f_out=None, w=3, n=1, input_repr='regular', output_repr='regular'):
+
+def dihedral(x, i):
+    if len(x.shape) == 3:
+        if i & 4:
+            y = np.transpose(x, (1, 0, 2))
+        else:
+            y = x.copy()
+
+        if i&3 == 0:
+            return y
+        if i&3 == 1:
+            return y[:, ::-1]
+        if i&3 == 2:
+            return y[::-1, :]
+        if i&3 == 3:
+            return y[::-1, ::-1]
+
+    if len(x.shape) == 4:
+        if i & 4:
+            y = np.transpose(x, (0, 2, 1, 3))
+        else:
+            y = x.copy()
+
+        if i&3 == 0:
+            return y
+        if i&3 == 1:
+            return y[:, :, ::-1]
+        if i&3 == 2:
+            return y[:, ::-1, :]
+        if i&3 == 3:
+            return y[:, ::-1, ::-1]
+
+def res_layer(x, f_out=None, w=3, n=1):
     f_in = x.get_shape().as_list()[3]
     assert w % 2 == 1
     if f_out is None:
@@ -12,19 +44,23 @@ def res_layer(x, f_out=None, w=3, n=1, input_repr='regular', output_repr='regula
     with tf.name_scope("res_layer"):
         b = (w // 2) * n
         s = x[:, b:-b, b:-b, :] # VALID padding
-        if f_in != f_out or input_repr != output_repr:
-            s = nn.convolution(s, f_out, w=1, input_repr=input_repr, output_repr=output_repr, name="shortcut")
+        if f_in != f_out:
+            s = nn.convolution(s, f_out, w=1, name="shortcut", activation=None)
 
         if n == 1:
-            x = nn.convolution(x, f_out, w=w, input_repr=input_repr, output_repr=output_repr)
+            x = nn.convolution(x, f_out, w=w, activation=None)
         else:
-            x = nn.convolution(x, f_out, w=w, input_repr=input_repr, output_repr='regular')
+            x = nn.convolution(x, f_out, w=w)
             for _ in range(n - 2):
-                x = nn.convolution(x, f_out, w=w, input_repr='regular', output_repr='regular')
-            x = nn.convolution(x, f_out, w=w, input_repr='regular', output_repr=output_repr)
+                x = nn.convolution(x, f_out, w=w)
+            x = nn.convolution(x, f_out, w=w, activation=None)
 
-        x = 0.7071067811865475 * (s + x)
+        x = nn.relu(0.7071067811865475 * (s + x))
         return x
+
+def summary_images(x, name):
+    for i in range(min(4, x.get_shape().as_list()[3])):
+        tf.summary.image("{}-{}".format(name, i), x[:, :, :, i:i+1])
 
 class CNN:
     # pylint: disable=too-many-instance-attributes
@@ -44,65 +80,72 @@ class CNN:
 
     def NN(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
-        x = nn.convolution(x, 8*4, w=2, input_repr='invariant') # 100
+        summary_images(x, "layer0")
+        x = nn.convolution(x, 16, w=2) # 100
+        summary_images(x, "layer1")
 
         ########################################################################
-        assert x.get_shape().as_list() == [None, 100, 100, 8*4]
+        assert x.get_shape().as_list() == [None, 100, 100, 16]
+        x = nn.batch_normalization(x, self.tfacc)
         x = res_layer(x, n=2) # 96
         x = nn.batch_normalization(x, self.tfacc)
         x = res_layer(x, n=2) # 92
+        summary_images(x, "layer5")
         x = nn.max_pool(x)
 
         ########################################################################
-        assert x.get_shape().as_list() == [None, 46, 46, 8*4]
-        x = res_layer(x, 8*8, n=3) # 40
+        assert x.get_shape().as_list() == [None, 46, 46, 16]
+        x = nn.batch_normalization(x, self.tfacc)
+        x = res_layer(x, 32, n=3) # 40
+        summary_images(x, "layer8")
         x = nn.batch_normalization(x, self.tfacc)
         x = res_layer(x, n=2) # 36
+        summary_images(x, "layer10")
         x = nn.max_pool(x)
-
-        ########################################################################
-        assert x.get_shape().as_list() == [None, 18, 18, 8*8]
-        x = res_layer(x, 8*16, n=2) # 14
         x = nn.batch_normalization(x, self.tfacc)
-
-        x = res_layer(x, 8*23, n=2) # 10
-        x = nn.batch_normalization(x, self.tfacc)
-
-        x = res_layer(x, 8*32, n=3) # 4
-        x = nn.batch_normalization(x, self.tfacc)
-
-        ########################################################################
-        assert x.get_shape().as_list() == [None, 4, 4, 8*32]
-        x = nn.convolution(x, 8*128, w=4)
         x = tf.nn.dropout(x, self.tfkp)
 
         ########################################################################
-        assert x.get_shape().as_list() == [None, 1, 1, 8*128]
-        x = tf.reshape(x, [-1, x.get_shape().as_list()[-1]])
+        assert x.get_shape().as_list() == [None, 18, 18, 32]
+        x = res_layer(x, 64, n=2) # 14
+        summary_images(x, "layer12")
+        x = nn.batch_normalization(x, self.tfacc)
+        x = res_layer(x, 92, n=2) # 10
+        x = nn.batch_normalization(x, self.tfacc)
+        x = tf.nn.dropout(x, self.tfkp)
+        x = res_layer(x, 128, n=3) # 4
+        x = nn.batch_normalization(x, self.tfacc)
+        x = tf.nn.dropout(x, self.tfkp)
 
+        ########################################################################
+        assert x.get_shape().as_list() == [None, 4, 4, 128]
+        x = nn.convolution(x, 1024, w=4)
+
+        ########################################################################
+        assert x.get_shape().as_list() == [None, 1, 1, 1024]
+        x = tf.reshape(x, [-1, x.get_shape().as_list()[-1]])
         self.embedding_input = x
 
-        x = nn.fullyconnected(x, 8*256)
+        x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
 
-        x = nn.fullyconnected(x, 8*256)
+        x = nn.fullyconnected(x, 1024)
+        x = nn.batch_normalization(x, self.tfacc)
+        x = tf.nn.dropout(x, self.tfkp)
+
+        x = nn.fullyconnected(x, 1024)
         x = nn.batch_normalization(x, self.tfacc)
         self.test = x
 
-        x = nn.fullyconnected(x, 1, output_repr='invariant', activation=None)
+        x = nn.fullyconnected(x, 1, activation=None)
         return x
 
     ########################################################################
     def create_architecture(self, bands):
-        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [])
-        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [])
-        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands])
+        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [], name="kp")
+        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [], name="acc")
+        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands], name="input")
         # mean = 0 and std = 1
-
-        if bands == 1:
-            tf.summary.image("input", x, 3)
-        else:
-            tf.summary.image("input", x[:,:,:,:3], 3)
 
         with tf.name_scope("nn"):
             x = self.NN(x)
@@ -116,7 +159,6 @@ class CNN:
             xent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=tf.reshape(self.tfy, [-1, 1]))
             # [None, 1]
             self.xent = tf.reduce_mean(xent)
-            tf.summary.scalar("xent", self.xent)
 
         with tf.name_scope("train"):
             self.tftrain_step = tf.train.AdamOptimizer(1e-4).minimize(self.xent)
@@ -161,7 +203,7 @@ class CNN:
         for i in range(len(xs)):
             s = np.random.uniform(0.8, 1.2)
             u = np.random.uniform(-0.1, 0.1)
-            xs[i] = xs[i] * s + u
+            xs[i] = dihedral(xs[i], np.random.randint(8)) * s + u
 
         return xs, ys
 
@@ -179,8 +221,26 @@ class CNN:
         self.train_counter += 1
         return output[1], output[2:]
 
-    def predict(self, session, images):
+    def predict_naive(self, session, images):
         return session.run(self.tfp, feed_dict={self.tfx: images})
 
-    def predict_xentropy(self, session, images, labels):
+    def predict_naive_xentropy(self, session, images, labels):
         return session.run([self.tfp, self.xent], feed_dict={self.tfx: images, self.tfy: labels})
+
+    def predict(self, session, images):
+        # exploit symmetries to make better predictions
+        ps = self.predict_naive(session, images)
+
+        for i in range(1, 8):
+            ps *= self.predict_naive(session, dihedral(images, i))
+
+        return ps
+
+    def predict_xentropy(self, session, images, labels):
+        # exploit symmetries to make better predictions
+        ps, xent = self.predict_naive_xentropy(session, images, labels)
+
+        for i in range(1, 8):
+            ps *= self.predict_naive(session, dihedral(images, i))
+
+        return ps, xent

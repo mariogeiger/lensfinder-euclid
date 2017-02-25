@@ -1,7 +1,7 @@
 # pylint: disable=C,R,no-member
 import tensorflow as tf
 import numpy as np
-import basic as nn
+import layers_normal as nn
 
 
 def dihedral(x, i):
@@ -35,6 +35,10 @@ def dihedral(x, i):
         if i&3 == 3:
             return y[:, ::-1, ::-1]
 
+def summary_images(x, name):
+    for i in range(min(4, x.get_shape().as_list()[3])):
+        tf.summary.image("{}-{}".format(name, i), x[:, :, :, i:i+1])
+
 class CNN:
     # pylint: disable=too-many-instance-attributes
 
@@ -53,8 +57,10 @@ class CNN:
 
     def NN(self, x):
         assert x.get_shape().as_list()[:3] == [None, 101, 101]
+        summary_images(x, "layer0")
         x = nn.convolution(x, 16, w=4) # 98
         x = nn.convolution(x) # 96
+        summary_images(x, "layer2")
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
@@ -62,6 +68,7 @@ class CNN:
         assert x.get_shape().as_list() == [None, 48, 48, 16]
         x = nn.convolution(x, 32) # 46
         x = nn.convolution(x) # 44
+        summary_images(x, "layer4")
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
 
@@ -69,6 +76,7 @@ class CNN:
         assert x.get_shape().as_list() == [None, 22, 22, 32]
         x = nn.convolution(x, 64) # 20
         x = nn.convolution(x) # 18
+        summary_images(x, "layer6")
         x = nn.max_pool(x)
         x = nn.batch_normalization(x, self.tfacc)
         x = tf.nn.dropout(x, self.tfkp)
@@ -76,6 +84,7 @@ class CNN:
         ########################################################################
         assert x.get_shape().as_list() == [None, 9, 9, 64]
         x = nn.convolution(x, 128) # 7
+        summary_images(x, "layer7")
         x = tf.nn.dropout(x, self.tfkp)
 
         x = nn.convolution(x) # 5
@@ -105,15 +114,10 @@ class CNN:
 
     ########################################################################
     def create_architecture(self, bands):
-        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [])
-        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [])
-        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands])
+        self.tfkp = tf.placeholder_with_default(tf.constant(1.0, tf.float32), [], name="kp")
+        self.tfacc = tf.placeholder_with_default(tf.constant(0.0, tf.float32), [], name="acc")
+        x = self.tfx = tf.placeholder(tf.float32, [None, 101, 101, bands], name="input")
         # mean = 0 and std = 1
-
-        if bands == 1:
-            tf.summary.image("input", x, 3)
-        else:
-            tf.summary.image("input", x[:,:,:,:3], 3)
 
         with tf.name_scope("nn"):
             x = self.NN(x)
@@ -127,7 +131,6 @@ class CNN:
             xent = tf.nn.sigmoid_cross_entropy_with_logits(logits=x, labels=tf.reshape(self.tfy, [-1, 1]))
             # [None, 1]
             self.xent = tf.reduce_mean(xent)
-            tf.summary.scalar("xent", self.xent)
 
         with tf.name_scope("train"):
             self.tftrain_step = tf.train.AdamOptimizer(1e-4).minimize(self.xent)

@@ -3,6 +3,7 @@
 # Usage
 # python3 neural_train.py arch?/arch.py path_to_npz_files output_path number_of_iteration
 
+import math
 import tensorflow as tf
 import numpy as np
 from sys import argv
@@ -140,6 +141,8 @@ def main(arch_path, images_path, output_path, n_iter):
         f.flush()
 
         copy2(arch_path, output_path + '/arch.py')
+        copy2('dihedral.py', output_path + '/dihedral.py')
+        copy2('basic.py', output_path + '/basic.py')
 
     f.write("Loading {}...".format(arch_path))
     f.flush()
@@ -205,35 +208,42 @@ def main(arch_path, images_path, output_path, n_iter):
     f.write(" Done\nEmbedding...")
     f.flush()
 
+    embedding_amount = 1000
     # Make sprite and labels.
-    images = ndimage.zoom(CNN.load(files_test[:1000]), (1, 64/101, 64/101, 1))
-    assert(images.shape == (1000, 64, 64, bands))
-    if bands == 1:
-        images = images[:, :, :, 0]
-    if bands == 4:
-        images = images[:, :, :, :3]
-    sprite = images_to_sprite(images)
-    scipy.misc.imsave(output_path + '/tensorboard/sprite.png', sprite)
-    metadata_file = open(output_path + '/tensorboard/labels.tsv', 'w')
-    metadata_file.write('id\tis_lens\tnumb_pix_lensed_image\teinstein_area\tflux_lensed_image_in_sigma\n')
-    for i in range(1000):
-        with np.load(files_test[i]) as data:
-            is_lens = data['is_lens']
-            metadata_file.write('{}\t{}\t{}\t{}\t{}\n'.format(data['id'], is_lens, is_lens * data['numb_pix_lensed_image'], is_lens * data['einstein_area'], is_lens * data['flux_lensed_image_in_sigma']))
-    metadata_file.close()
+    sprite_path = output_path + '/../sprite{}.png'.format(bands)
+    if not os.path.isfile(sprite_path):
+        images = ndimage.zoom(CNN.load(files_test[:embedding_amount]), (1, 64/101, 64/101, 1))
+        assert(images.shape == (embedding_amount, 64, 64, bands))
+        if bands == 1:
+            images = images[:, :, :, 0]
+        if bands == 4:
+            images = images[:, :, :, :3]
+        sprite = images_to_sprite(images)
+        scipy.misc.imsave(sprite_path, sprite)
+
+    tsv_path = output_path + '/../labels{}.tsv'.format(bands)
+    if not os.path.isfile(tsv_path):
+        metadata_file = open(tsv_path, 'w')
+        metadata_file.write('id\tis_lens\tnumb_pix_lensed_image\teinstein_area\tflux_lensed_image_in_sigma\n')
+        for i in range(embedding_amount):
+            with np.load(files_test[i]) as data:
+                is_lens = data['is_lens']
+                metadata_file.write('{}\t{}\t{}\t{}\t{}\n'.format(data['id'], is_lens, is_lens * data['numb_pix_lensed_image'], is_lens * data['einstein_area'], is_lens * data['flux_lensed_image_in_sigma']))
+        metadata_file.close()
 
     embedding_size = np.prod(cnn.embedding_input.get_shape().as_list()[1:])
-    embedding = tf.Variable(tf.zeros([1000, embedding_size]), name="test_embedding")
+    embedding = tf.Variable(tf.zeros([embedding_amount, embedding_size]), name="test_embedding")
     embedding_placeholder = tf.placeholder(tf.float32, embedding.get_shape())
     embedding_assignment = embedding.assign(embedding_placeholder)
+    embedding_saver = tf.train.Saver([embedding])
 
     embedding_input_flatten = tf.reshape(cnn.embedding_input, [-1, embedding_size])
 
     config = tf.contrib.tensorboard.plugins.projector.ProjectorConfig()
     embedding_config = config.embeddings.add()
     embedding_config.tensor_name = embedding.name
-    embedding_config.sprite.image_path = output_path + '/tensorboard/sprite.png'
-    embedding_config.metadata_path = output_path + '/tensorboard/labels.tsv'
+    embedding_config.sprite.image_path = sprite_path
+    embedding_config.metadata_path = tsv_path
     # Specify the width and height of a single thumbnail.
     embedding_config.sprite.single_image_dim.extend([64, 64])
     tf.contrib.tensorboard.plugins.projector.visualize_embeddings(writer, config)
@@ -294,15 +304,14 @@ def main(arch_path, images_path, output_path, n_iter):
 
     def save_statistics(i):
         if (i // 1000) % 3 == 1:
-            data = np.zeros((1000, embedding_size))
-            for j in range(0, 1000, 100):
-                f.write('{}/{}\n'.format(j, 1000))
+            data = np.zeros((embedding_amount, embedding_size), np.float32)
+            for j in range(0, embedding_amount, 100):
+                f.write('{}/{}\n'.format(j, embedding_amount))
                 f.flush()
                 data[j: j+100] = session.run(embedding_input_flatten, feed_dict={ cnn.tfx: CNN.load(files_test[j: j+100]) })
             session.run(embedding_assignment, feed_dict={ embedding_placeholder: data })
 
-            save_path = saver.save(session, '{}/tensorboard/model.ckpt'.format(output_path), i)
-            f.write('Model saved in file: {}\n'.format(save_path))
+            embedding_saver.save(session, '{}/tensorboard/model.ckpt'.format(output_path), i)
 
         save_path = saver.save(session, '{}/iter/{:06d}.data'.format(output_path, i))
         f.write('Model saved in file: {}\n'.format(save_path))
@@ -340,7 +349,7 @@ def main(arch_path, images_path, output_path, n_iter):
     f.flush()
 
     # Use a Queue to generate batches and train in parallel
-    q = queue.Queue(50)  # batches in the queue
+    q = queue.Queue(30)  # batches in the queue
 
     def trainer():
         for i in range(resume_iter, resume_iter + n_iter + 1):
@@ -348,7 +357,7 @@ def main(arch_path, images_path, output_path, n_iter):
 
             rem = resume_iter + n_iter + 1 - i
             if q.qsize() < min(3, rem):
-                while q.qsize() < min(50, rem):
+                while q.qsize() < min(30, rem):
                     sleep(0.05)
 
             xs, ys = q.get()
@@ -372,13 +381,16 @@ def main(arch_path, images_path, output_path, n_iter):
                 ctf = tl.generate_chrome_trace_format()
                 with open(output_path + '/timeline.json', 'w') as tlf:
                     tlf.write(ctf)
-            elif i % 50 == 0:
+            elif i % 100 == 0:
                 xentropy, s = cnn.train(session, xs, ys, tensors=[summary])
                 writer.add_summary(s[0], i)
             else:
                 xentropy, _ = cnn.train(session, xs, ys)
 
             fx.write('{}    {:.6} \n'.format(i, xentropy))
+            s = tf.Summary()
+            s.value.add(tag="xent_batch", simple_value=xentropy)
+            writer.add_summary(s, i)
 
             if i % 100 == 0 and i != 0:
                 f.write("\nAfter the training\n")
@@ -395,6 +407,9 @@ def main(arch_path, images_path, output_path, n_iter):
             f.flush()
 
             q.task_done()
+
+            if math.isnan(xentropy) or math.isinf(xentropy):
+                return
 
     t = threading.Thread(target=trainer)
     t.daemon = True

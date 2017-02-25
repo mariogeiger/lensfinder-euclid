@@ -9,6 +9,7 @@ python v3 is needed with the following libraries:
 - `sklearn`
 - `scipy`
 
+To install is on debian:
 
     sudo apt-get install python3-numpy python3-astropy python3-sklearn python3-pip
     pip install tensorflow # because no package in debian at the time i wrote this
@@ -18,15 +19,21 @@ python v3 is needed with the following libraries:
 - `arch_baseline.py` baseline architecture
 - `arch_views.py` two NN feed with the full image and only the central part connected at the end
 - `arch_invariant.py` invariant NN under the dihedral group
+- `arch_residual.py` based on resnet
 
-## get started notebook
-The file `get_started.ipynb` is a jupyter notebook that contains example usage.
+## jupyter notebooks
 
-## make a prediction
+(`sudo apt-get install python3-notebook`)
+- `get_started.ipynb` usage examples
+- `predictions.ipynb` make perdictions from fits images
+- `invariance_check.ipynb` test the invariance of invariant NN
+- `parameters_amount.ipynb` shows the amount of trained parameters in each architecture
+
+## prediction script
 
     python3 predict.py arch_baseline.py trained_variables/space_based/baseline output.txt samples/space_based/lens
 
-## train the NN
+## train script
 
 The training set can be download at [the challenge page](http://metcalf1.bo.astro.it/blf-portal/gg_challenge.html).
 
@@ -37,6 +44,6 @@ Finally start the training for 50000 iteration of SGD
 
     python3 train.py arch_baseline.py npz_files output 50000
     
-In another terminal, to see the progress
+To see the progress, run the following in another terminal 
 
     tail -f output/log.txt

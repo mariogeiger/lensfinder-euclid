@@ -141,8 +141,8 @@ def main(arch_path, images_path, output_path, n_iter):
         f.flush()
 
         copy2(arch_path, output_path + '/arch.py')
-        copy2('dihedral.py', output_path + '/dihedral.py')
-        copy2('basic.py', output_path + '/basic.py')
+        copy2('layers_dihedral_equi.py', output_path + '/layers_dihedral_equi.py')
+        copy2('layers_normal.py', output_path + '/layers_normal.py')
 
     f.write("Loading {}...".format(arch_path))
     f.flush()

@@ -36,3 +36,7 @@ It will generate npz files containing the images with labels.
 Finally start the training for 50000 iteration of SGD
 
     python3 train.py arch_baseline.py npz_files output 50000
+    
+In another terminal, to see the progress
+
+    tail -f output/log.txt

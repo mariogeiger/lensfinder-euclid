@@ -3,16 +3,11 @@
 ## required software
 
 python v3 is needed with the following libraries:
-- `tensorflow`
-- `numpy`
-- `astropy`
-- `sklearn`
-- `scipy`
-
-To install is on debian:
-
-    sudo apt-get install python3-numpy python3-astropy python3-sklearn python3-pip
-    pip install tensorflow # because no package in debian at the time i wrote this
+- `tensorflow` ([install tensorflow](https://www.tensorflow.org/install/))
+- `numpy` (`sudo apt-get install python3-numpy`)
+- `astropy` (`sudo apt-get install python3-astropy`)
+- `sklearn` (`pip3 install sklearn`)
+- `scipy` (`sudo apt-get install python3-scipy`)
 
 ## architectures
 

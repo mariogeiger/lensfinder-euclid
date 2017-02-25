@@ -18,7 +18,7 @@ python v3 is needed with the following libraries:
 
 ## jupyter notebooks
 
-(`sudo apt-get install python3-notebook`)
+([install jupyter](http://jupyter.org/))
 - `get_started.ipynb` usage examples
 - `predictions.ipynb` make perdictions from fits images
 - `invariance_check.ipynb` test the invariance of invariant NN
@@ -28,6 +28,7 @@ python v3 is needed with the following libraries:
 
     python3 predict.py arch_baseline.py trained_variables/space_based/baseline output.txt samples/space_based/lens
 
+The way is load the architecture python script it needs python 3.5+
 ## train script
 
 The training set can be download at [the challenge page](http://metcalf1.bo.astro.it/blf-portal/gg_challenge.html).

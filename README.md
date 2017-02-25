@@ -1,4 +1,5 @@
 # lensfinder euclid
+Participation to [The Gravitational Lens Finding Challenge](http://metcalf1.bo.astro.it/blf-portal/gg_challenge.html)
 
 ## required software
 

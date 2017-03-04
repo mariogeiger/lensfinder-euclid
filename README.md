@@ -28,6 +28,12 @@ python 3.5+ is needed with the following libraries:
 ## prediction script
 
     python3 predict.py arch_baseline.py trained_variables/space_based/baseline output.txt samples/space_based/lens
+    
+or for groud based:
+
+    python3 predict.py arch_residual.py trained_variables/ground_based/residual output.txt samples/ground_based/nolens/Band1 samples/ground_based/nolens/Band2 samples/ground_based/nolens/Band3 samples/ground_based/nolens/Band4
+
+The trained variables of the views architecture are too big to be put on github in one file, so it has been splitted into 3 files. Use `7za e views.7z.001` to restore the file.
 
 ## train script
 

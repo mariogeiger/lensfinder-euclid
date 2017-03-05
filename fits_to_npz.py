@@ -25,7 +25,7 @@ def read_fits(list_of_paths, flags, output):
         im = np.stack(bands, axis=2)
 
         if np.isnan(im).any() or np.isinf(im).any():
-            print("Warning ! image containt Inf or NaN")
+            print("Warning ! image contain Inf or NaN")
 
         ids = [int(f.split('.')[0].split('-')[-1]) for f in fns]
 

@@ -12,18 +12,18 @@ python 3.5+ is needed with the following libraries:
 
 ## architectures
 
-- `arch_baseline.py` baseline architecture
-- `arch_views.py` two NN feed with the full image and only the central part connected at the end
-- `arch_invariant.py` invariant NN under the dihedral group
-- `arch_residual.py` based on resnet
+- [arch_baseline.py](arch_baseline.py) baseline architecture
+- [arch_views.py](arch_views.py) two NN feed with the full image and only the central part connected at the end
+- [arch_invariant.py](arch_invariant.py) invariant NN under the dihedral group
+- [arch_residual.py](arch_residual.py) based on resnet
 
 ## jupyter notebooks
 
 ([install jupyter](http://jupyter.org/))
-- `get_started.ipynb` usage examples
-- `predictions.ipynb` make perdictions from fits images
-- `invariance_check.ipynb` test the invariance of invariant NN
-- `parameters_amount.ipynb` shows the amount of trained parameters in each architecture
+- [get_started.ipynb](get_started.ipynb) usage examples
+- [predictions.ipynb](predictions.ipynb) make perdictions from fits images
+- [invariance_check.ipynb](invariance_check.ipynb) test the invariance of invariant NN
+- [parameters_amount.ipynb](parameters_amount.ipynb) shows the amount of trained parameters in each architecture
 
 ## prediction script
 
